@@ -7,6 +7,7 @@
 #define APB1_BASE       (PERIPH_BASE + 0x00000000)
 #define APB2_BASE       (PERIPH_BASE + 0x00010000)
 #define AHB_BASE    	(PERIPH_BASE + 0x00020000)
+#define CAN1_BASE       (PERIPH_BASE + 0x00006400)
 
 typedef struct {
     volatile uint32_t CR;
@@ -23,11 +24,11 @@ typedef struct {
 
 #define RCC               ((RCC_t *)(AHB_BASE + 0x1000))
 
-
 #define RCC_CR_HSION      (1U << 0)
 #define RCC_CR_HSIRDY     (1U << 1)
 #define RCC_CR_HSEON      (1U << 16)
 #define RCC_CR_HSERDY     (1U << 17)
+#define RCC_CR_CSSON	  (1U << 19)
 #define RCC_CR_PLLON      (1U << 24)
 #define RCC_CR_PLLRDY     (1U << 25)
 
@@ -42,6 +43,9 @@ typedef struct {
 #define RCC_CFGR_PLLSRC   (1U << 16)
 #define RCC_CFGR_PLLMUL9  (7U << 18)
 
+#define RCC_CIR_CSSF 	  (1U << 7)
+#define RCC_CIR_CSSC 	  (1U << 23)
+
 #define RCC_APB2ENR_AFIOEN   (1U << 0)
 #define RCC_APB2ENR_IOPAEN   (1U << 2)
 #define RCC_APB2ENR_IOPBEN   (1U << 3)
@@ -49,6 +53,7 @@ typedef struct {
 #define RCC_APB2ENR_USART1EN (1U << 14)
 
 #define RCC_APB1ENR_TIM2EN   (1U << 0)
+#define RCC_APB1ENR_CAN1EN   (1U << 25)
 
 typedef struct {
     volatile uint32_t CRL;
@@ -126,7 +131,6 @@ typedef struct {
 #define FLASH_ACR_LATENCY_2WS    (2U << 0U) /* 2 wait states for frequencies 48-72 MHz */
 #define FLASH_ACR_PRFTBE  		 (1U << 4U) /* enabling Prefetch buffer improves performance */
 
-
 typedef struct {
     volatile uint32_t SR; 
     volatile uint32_t DR;
@@ -144,5 +148,26 @@ typedef struct {
 
 #define USART_CR1_UE      (1U << 13)
 #define USART_CR1_TE      (1U << 3)
+
+typedef struct {
+	volatile uint32_t MCR;
+	volatile uint32_t MSR;
+	volatile uint32_t TSR;
+	volatile uint32_t RF0R;
+	volatile uint32_t RF1R;
+	volatile uint32_t IER;
+	volatile uint32_t ESR;
+	volatile uint32_t BTR;
+	volatile uint32_t _reserved[88];
+	volatile uint32_t TI0R;
+	volatile uint32_t TDT0R;
+	volatile uint32_t TDL0R;
+} CAN1_t;
+
+#define CAN1              ((CAN1_t *)(CAN1_BASE + 0x0000))
+#define CAN1_MCR_INRQ     (1U << 0)
+#define CAN1_MCR_SLEEP    (1U << 1)
+#define CAN1_MSR_INAK     (1U << 0)
+#define CAN1_MSR_SLAK     (1U << 1)
 
 #endif
