@@ -162,7 +162,7 @@ int main(void)
 	exti0_init();
 	can1_init();
 	
-	uart_write("Project 1 - Bare Metal STM32 Programming\r\n");
+	uart_write("Project 2 - CAN Bus communication\r\n");
 	
 
 	for (;;) { } /* Using interrupts for flow control */
