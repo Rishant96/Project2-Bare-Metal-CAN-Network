@@ -118,20 +118,60 @@ void TIM2_IRQHandler(void)
     }
 }
 
+static void delay(volatile uint32_t count)
+{
+    while (count--);
+}
+
+static void can1_tx(uint32_t std_id, uint32_t len, uint32_t data)
+{
+	while (!(CAN1->TSR & CAN1_TSR_TME0)) { }
+
+	CAN1->TI0R = (std_id << 21);
+	CAN1->TDT0R = len;
+	CAN1->TDL0R = data;
+	
+	CAN1->TI0R |= CAN1_TIXR_TXRQ;
+}
+
 void EXTI0_IRQHandler(void)
 {
 	if (EXTI->PR & (1U << 0)) {
 		EXTI->PR = (1U << 0);
 		uart_write("button!\r\n");
-	}
-	
-	uart_write("CAN1->MSR = ");
-	uart_put_byte(CAN1->MSR);
-	uart_write("\r\n");
-	
-	uart_write("CAN1->BTR = ");
-	uart_put_byte(CAN1->BTR);
-	uart_write("\r\n");
+		
+		can1_tx(0x123, 2, 0xCAFE);
+		
+		uart_write("CAN1->TSR = ");
+		uart_put_byte(CAN1->TSR);
+		uart_write("\r\n");
+		
+		uart_write("CAN1->MSR = ");
+		uart_put_byte(CAN1->MSR);
+		uart_write("\r\n");
+		
+		uart_write("CAN1->MCR = ");
+		uart_put_byte(CAN1->MCR);
+		uart_write("\r\n");
+		
+		uart_write("CAN1->BTR = ");
+		uart_put_byte(CAN1->BTR);
+		uart_write("\r\n");
+		
+		delay(720000);
+		
+		if (CAN1->RF0R & CAN1_RF0R_FMP0) {
+			uart_write("RX ID  = ");
+			uart_put_byte(CAN1->RI0R);
+			uart_write("\r\n");
+			
+			uart_write("RX DATA = ");
+			uart_put_byte(CAN1->RDL0R);
+			uart_write("\r\n");
+			
+			CAN1->RF0R |= CAN1_RF0R_RFOM0;
+		}
+	}	
 }
 
 static void can1_init(void)
@@ -143,14 +183,17 @@ static void can1_init(void)
 	while (!(CAN1->MSR & CAN1_MSR_INAK)) { }
 	
 	CAN1->BTR = (0U << 24) | (1U << 20) | (14U << 16) | (3U << 0); /* SJW = 1, TS2 = 2, TS1 = 15, BRP = 4 (all minus 1) */
+	CAN1->BTR |= (1U << 30); /* Loopback mode for testing */
 	
-	uart_write("CAN1->MSR = ");
-	uart_put_byte(CAN1->MSR);
-	uart_write("\r\n");
+	CAN1->FMR  |=  1;
+	CAN1->FS1R |=  1;
+	CAN1->F0R1  =  0;
+	CAN1->F0R2  =  0;
+	CAN1->FA1R |=  1;
+	CAN1->FMR  &= ~1;
 	
-	uart_write("CAN1->BTR = ");
-	uart_put_byte(CAN1->BTR);
-	uart_write("\r\n");
+	CAN1->MCR &= ~CAN1_MCR_INRQ;
+	while (CAN1->MSR & CAN1_MSR_INAK) { }
 }
 
 int main(void)
@@ -163,8 +206,6 @@ int main(void)
 	can1_init();
 	
 	uart_write("Project 2 - CAN Bus communication\r\n");
-	
 
 	for (;;) { } /* Using interrupts for flow control */
-
 }

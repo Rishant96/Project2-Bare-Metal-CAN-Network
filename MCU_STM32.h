@@ -162,12 +162,50 @@ typedef struct {
 	volatile uint32_t TI0R;
 	volatile uint32_t TDT0R;
 	volatile uint32_t TDL0R;
+	volatile uint32_t TDH0R;
+	volatile uint32_t TI1R;
+	volatile uint32_t TDT1R;
+	volatile uint32_t TDL1R;
+	volatile uint32_t TDH1R;
+	volatile uint32_t TI2R;
+	volatile uint32_t TDT2R;
+	volatile uint32_t TDL2R;
+	volatile uint32_t TDH2R;
+	volatile uint32_t RI0R;
+	volatile uint32_t RDT0R;
+	volatile uint32_t RDL0R;
+	volatile uint32_t RDH0R;
+	volatile uint32_t RI1R;
+	volatile uint32_t RDT1R;
+	volatile uint32_t RDL1R;
+	volatile uint32_t RDH1R;
+	volatile uint32_t _reserved2[12];
+	volatile uint32_t FMR;
+	volatile uint32_t FM1R;
+	volatile uint32_t _reserved3[1];
+	volatile uint32_t FS1R;
+	volatile uint32_t _reserved4[1];
+	volatile uint32_t FFA1R;
+	volatile uint32_t _reserved5[1];
+	volatile uint32_t FA1R;
+	volatile uint32_t _reserved6[8];
+	volatile uint32_t F0R1;	
+	volatile uint32_t F0R2;
+	volatile uint32_t F1R1;
+	volatile uint32_t F1R2;	
 } CAN1_t;
 
 #define CAN1              ((CAN1_t *)(CAN1_BASE + 0x0000))
 #define CAN1_MCR_INRQ     (1U << 0)
 #define CAN1_MCR_SLEEP    (1U << 1)
+
 #define CAN1_MSR_INAK     (1U << 0)
 #define CAN1_MSR_SLAK     (1U << 1)
+
+#define CAN1_TIXR_TXRQ    (1U << 0)
+#define CAN1_TSR_TME0     (1U << 26)
+
+#define CAN1_RF0R_FMP0    (0x3U << 0)
+#define CAN1_RF0R_RFOM0   (1U << 5)
 
 #endif
