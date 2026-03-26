@@ -204,6 +204,7 @@ typedef struct {
 
 #define CAN1_TIXR_TXRQ    (1U << 0)
 #define CAN1_TSR_TME0     (1U << 26)
+#define CAN1_TSR_RQCP0	  (1U << 0)
 
 #define CAN1_RF0R_FMP0    (0x3U << 0)
 #define CAN1_RF0R_RFOM0   (1U << 5)

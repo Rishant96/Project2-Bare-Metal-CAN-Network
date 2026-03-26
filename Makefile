@@ -21,7 +21,7 @@ LDLIBS  = -lgcc
 SRCS    = startup.c main.c
 OBJS    = $(SRCS:.c=.o)
 
-.PHONY: all clean flash
+.PHONY: all clean flash node_a node_b
 
 all: $(TARGET).bin
 	$(SIZE) $(TARGET).elf
@@ -37,6 +37,14 @@ $(TARGET).bin: $(TARGET).elf
 
 flash: $(TARGET).bin
 	st-flash write $(TARGET).bin 0x08000000
+	
+node_a: clean
+	$(MAKE) all CFLAGS="$(CFLAGS) -DNODE_A"
+	$(MAKE) flash
+
+node_b: clean
+	$(MAKE) all CFLAGS="$(CFLAGS) -DNODE_B"
+	$(MAKE) flash
 
 clean:
 	rm -f $(OBJS) $(TARGET).elf $(TARGET).bin
