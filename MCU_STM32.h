@@ -215,6 +215,20 @@ typedef struct {
 #define CAN1_RF0R_FMP0    (0x3U << 0)
 #define CAN1_RF0R_RFOM0   (1U << 5)
 
+/* CAN1 MCR bits */
+#define CAN1_MCR_NART     (1U << 4)
+
+/* CAN1 IER bits */
+#define CAN1_IER_FMPIE0   (1U << 1)
+
+/* CAN1 BTR helpers */
+#define CAN_BTR_SJW(n)    (((n)-1) << 24)
+#define CAN_BTR_TS2(n)    (((n)-1) << 20)
+#define CAN_BTR_TS1(n)    (((n)-1) << 16)
+#define CAN_BTR_BRP(n)    (((n)-1) << 0)
+
+#define IRQ_CAN_RX0 20
+
 typedef struct { uint32_t raw; } can_id_t;
 typedef struct { uint8_t  raw; } can_dlc_t;
 
