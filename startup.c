@@ -67,6 +67,8 @@ void EXTI15_10_IRQHandler(void)    __attribute__((weak, alias("Default_Handler")
 void RTCAlarm_IRQHandler(void)     __attribute__((weak, alias("Default_Handler")));
 void USBWakeup_IRQHandler(void)    __attribute__((weak, alias("Default_Handler")));
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
 __attribute__((section(".isr_vector")))
 void (* const vector_table[])(void) = {
     (void (*)(void))(&_estack),
@@ -127,6 +129,7 @@ void (* const vector_table[])(void) = {
     RTCAlarm_IRQHandler,
     USBWakeup_IRQHandler,
 };
+#pragma GCC diagnostic pop
 
 void Reset_Handler(void)
 {

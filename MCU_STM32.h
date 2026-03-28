@@ -3,6 +3,12 @@
 
 #include <stdint.h>
 
+#ifdef DEBUG
+    #define Assert(expr) do { if (!(expr)) { __asm volatile("bkpt #0"); } } while(0)
+#else
+    #define Assert(expr) ((void)0)
+#endif
+
 #define PERIPH_BASE 	((uint32_t)0x40000000)
 #define APB1_BASE       (PERIPH_BASE + 0x00000000)
 #define APB2_BASE       (PERIPH_BASE + 0x00010000)
@@ -208,5 +214,14 @@ typedef struct {
 
 #define CAN1_RF0R_FMP0    (0x3U << 0)
 #define CAN1_RF0R_RFOM0   (1U << 5)
+
+typedef struct { uint32_t raw; } can_id_t;
+typedef struct { uint8_t  raw; } can_dlc_t;
+
+typedef struct {
+	can_id_t  id;
+	can_dlc_t dlc;
+	uint8_t   data[8];
+} can_msg_t;
 
 #endif

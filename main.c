@@ -128,10 +128,73 @@ void TIM2_IRQHandler(void)
     }
 }
 
-static void can1_tx(uint32_t std_id, uint32_t len, uint32_t data);
+static void can_msg_set_data_u16(can_msg_t *msg, uint16_t val) {
+    Assert(msg != 0);
+    msg->data[0] = (uint8_t)(val & 0xFF);
+    msg->data[1] = (uint8_t)((val >> 8) & 0xFF);
+}
+
+static void can1_tx_id_dlc_data(can_id_t std_id, can_dlc_t dlc, uint8_t *data)
+{	
+	Assert(std_id.raw <= 0x7FF);
+	Assert(dlc.raw <= 8);
+	
+	while (!(CAN1->TSR & CAN1_TSR_TME0)) { }
+
+	CAN1->TI0R = (std_id.raw << 21);
+	CAN1->TDT0R = dlc.raw;
+	{
+		uint32_t low = 0, high = 0;
+		uint8_t i;
+		for (i = 0; i < dlc.raw && i < 4; i++) {
+			low |= (uint32_t)data[i] << (8 * i);
+		}
+		CAN1->TDL0R = low;
+
+		if (dlc.raw > 4) {
+			for (i = 4; i < dlc.raw && i < 8; i++) {
+				high |= (uint32_t)data[i] << (8 * (i - 4));
+			}
+			CAN1->TDH0R = high;
+		}
+	}
+	CAN1->TI0R |= CAN1_TIXR_TXRQ;
+	
+	while (!(CAN1->TSR & CAN1_TSR_RQCP0)) { } 
+	CAN1->TSR |= CAN1_TSR_RQCP0;
+}
+
+
+static void can1_tx_msg(can_msg_t *msg)
+{
+	Assert(msg != 0);
+	can1_tx_id_dlc_data(msg->id, msg->dlc, msg->data);
+}
+
+static void can1_init(void)
+{	
+	CAN1->MCR = (CAN1->MCR & ~CAN1_MCR_SLEEP) | CAN1_MCR_INRQ;
+	while (CAN1->MSR & CAN1_MSR_SLAK) { }
+	while (!(CAN1->MSR & CAN1_MSR_INAK)) { }
+	
+	CAN1->BTR = (0U << 24) | (1U << 20) | (14U << 16) | (3U << 0); /* SJW = 1, TS2 = 2, TS1 = 15, BRP = 4 (all minus 1) */
+	/*CAN1->BTR |= (1U << 30); Loopback mode for testing */
+	
+	CAN1->FMR  |=  1;
+	CAN1->FS1R |=  1;
+	CAN1->F0R1  =  0;
+	CAN1->F0R2  =  0;
+	CAN1->FA1R |=  1;
+	CAN1->FMR  &= ~1;
+	
+	CAN1->MCR |= (1U << 4);
+	CAN1->MCR &= ~CAN1_MCR_INRQ;
+	while (CAN1->MSR & CAN1_MSR_INAK) { }
+}
 
 void EXTI0_IRQHandler(void)
 {
+    Assert(EXTI->PR & (1U << 0));
 	if (EXTI->PR & (1U << 0)) {
 		EXTI->PR = (1U << 0);
 		uart_write("button!\r\n");
@@ -160,7 +223,14 @@ void EXTI0_IRQHandler(void)
 		
 #ifdef NODE_A
 		uart_write("Node A: sending 'CAFE'\r\n");
-		can1_tx(0x123, 2, 0xCAFE);		
+		{
+			can_msg_t msg;
+			msg.id.raw = 0x123;
+			msg.dlc.raw = 2;
+			for (i = 0; i < 8; i++) msg.data[i] = 0;
+            can_msg_set_data_u16(&msg, 0xCAFE);
+			can1_tx_msg(&msg);	
+		}
 #endif
 		
 		uart_write("CAN1->TSR = ");
@@ -179,41 +249,6 @@ void EXTI0_IRQHandler(void)
 		uart_put_byte(CAN1->BTR);
 		uart_write("\r\n");
 	}	
-}
-
-static void can1_init(void)
-{	
-	CAN1->MCR = (CAN1->MCR & ~CAN1_MCR_SLEEP) | CAN1_MCR_INRQ;
-	while (CAN1->MSR & CAN1_MSR_SLAK) { }
-	while (!(CAN1->MSR & CAN1_MSR_INAK)) { }
-	
-	CAN1->BTR = (0U << 24) | (1U << 20) | (14U << 16) | (3U << 0); /* SJW = 1, TS2 = 2, TS1 = 15, BRP = 4 (all minus 1) */
-	/*CAN1->BTR |= (1U << 30); Loopback mode for testing */
-	
-	CAN1->FMR  |=  1;
-	CAN1->FS1R |=  1;
-	CAN1->F0R1  =  0;
-	CAN1->F0R2  =  0;
-	CAN1->FA1R |=  1;
-	CAN1->FMR  &= ~1;
-	
-	CAN1->MCR |= (1U << 4);
-	CAN1->MCR &= ~CAN1_MCR_INRQ;
-	while (CAN1->MSR & CAN1_MSR_INAK) { }
-}
-
-static void can1_tx(uint32_t std_id, uint32_t len, uint32_t data)
-{
-	while (!(CAN1->TSR & CAN1_TSR_TME0)) { }
-
-	CAN1->TI0R = (std_id << 21);
-	CAN1->TDT0R = len;
-	CAN1->TDL0R = data;
-	
-	CAN1->TI0R |= CAN1_TIXR_TXRQ;
-	
-	while (!(CAN1->TSR & CAN1_TSR_RQCP0)) { } 
-	CAN1->TSR |= CAN1_TSR_RQCP0;
 }
 
 int main(void)
