@@ -290,7 +290,7 @@ void USB_LP_CAN_RX0_IRQHandler(void)
 		{
 			int i;
 			for (i = 0; i < rx.dlc.raw; i++) {
-				uart_put_hex32(rx.data[i]);
+				uart_put_hex8(rx.data[i]);
 			}
 		}
 		uart_write("\r\n");
