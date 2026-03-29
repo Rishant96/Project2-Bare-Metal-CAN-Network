@@ -10,11 +10,20 @@ SIZE    = $(PREFIX)size
 TARGET  = firmware
 
 # Compiler flags: C89, no stdlib, thumb, cortex-m3
-CFLAGS  = -std=c89 -Wall -Wextra -Wpedantic -Werror -Os \
+
+CFLAGS  = -std=c89 -Wall -Wextra -Wpedantic -Werror \
           -mcpu=cortex-m3 -mthumb \
           -ffreestanding -nostdlib \
           -fno-common \
-		  -DDEBUG
+		  -ffunction-sections -fdata-sections \
+		  $(EXTRA_CFLAGS)
+
+BUILD ?= debug
+ifeq ($(BUILD),debug)
+  CFLAGS += -DDEBUG -Og -g
+else
+  CFLAGS += -DNDEBUG -Os
+endif
 
 LDFLAGS = -T linker.ld -nostdlib -Wl,--gc-sections
 LDLIBS  = -lgcc
@@ -35,17 +44,21 @@ $(TARGET).elf: $(OBJS)
 
 $(TARGET).bin: $(TARGET).elf
 	$(OBJCOPY) -O binary $< $@
+		
+$(TARGET).hex: $(TARGET).elf
+	$(OBJCOPY) -O ihex $< $@
 
 flash: $(TARGET).bin
 	st-flash write $(TARGET).bin 0x08000000
 	
 node_a: clean
-	$(MAKE) all CFLAGS="$(CFLAGS) -DNODE_A"
-	$(MAKE) flash
+	$(MAKE) all EXTRA_CFLAGS="-DNODE_A"
+	$(MAKE) flash		  
+
 
 node_b: clean
-	$(MAKE) all CFLAGS="$(CFLAGS) -DNODE_B"
-	$(MAKE) flash
+	$(MAKE) all EXTRA_CFLAGS="-DNODE_B"
+	$(MAKE) flash		  
 
 clean:
-	rm -f $(OBJS) $(TARGET).elf $(TARGET).bin
+	rm -f $(OBJS) $(TARGET).elf $(TARGET).bin $(TARGET).hex
