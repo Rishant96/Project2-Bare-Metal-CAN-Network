@@ -4,9 +4,9 @@
 #include <stdint.h>
 
 #ifdef DEBUG
-    #define Assert(expr) do { if (!(expr)) { __asm volatile("bkpt #0"); } } while(0)
+#define Assert(expr) do { if (!(expr)) { __asm volatile("bkpt #0"); } } while(0)
 #else
-    #define Assert(expr) ((void)0)
+#define Assert(expr) ((void)0)
 #endif
 
 #define PERIPH_BASE 	((uint32_t)0x40000000)
@@ -207,6 +207,7 @@ typedef struct {
 
 #define CAN1_MSR_INAK     (1U << 0)
 #define CAN1_MSR_SLAK     (1U << 1)
+#define CAN1_MSR_ERRI     (1U << 2)
 
 #define CAN1_TIXR_TXRQ    (1U << 0)
 #define CAN1_TSR_TME0     (1U << 26)
@@ -220,6 +221,10 @@ typedef struct {
 
 /* CAN1 IER bits */
 #define CAN1_IER_FMPIE0   (1U << 1)
+#define CAN1_IER_EWGIE	  (1U << 8)
+#define CAN1_IER_EPVIE	  (1U << 9)
+#define CAN1_IER_BOFIE	  (1U << 10)
+#define CAN1_IER_ERRIE	  (1U << 15)
 
 /* CAN1 BTR helpers */
 #define CAN_BTR_SJW(n)    (((n)-1) << 24)
@@ -227,7 +232,12 @@ typedef struct {
 #define CAN_BTR_TS1(n)    (((n)-1) << 16)
 #define CAN_BTR_BRP(n)    (((n)-1) << 0)
 
-#define IRQ_CAN_RX0 20
+#define IRQ_CAN_RX0 	  20
+#define IRQ_CAN_SCE 	  22
+
+#define CAN_ESR_EPVF      (1U << 1)
+#define CAN_ESR_BOFF      (1U << 2)
+#define CAN_ESR_LEC       (0x7 << 4)
 
 typedef struct { uint32_t raw; } can_id_t;
 typedef struct { uint8_t  raw; } can_dlc_t;
@@ -237,5 +247,15 @@ typedef struct {
 	can_dlc_t dlc;
 	uint8_t   data[8];
 } can_msg_t;
+
+#define __DMB() __asm volatile("dmb" ::: "memory")
+
+typedef struct {
+	uint8_t *base;
+	uint16_t capacity;
+	uint16_t mask;
+	volatile uint16_t head;
+	volatile uint16_t tail;
+} ring_buf_t;
 
 #endif

@@ -1,5 +1,122 @@
 #include "MCU_STM32.h"
 
+static uint8_t uart_tx_buf[256];
+static ring_buf_t uart_tx_ring;
+
+static void rb_init(ring_buf_t *buffer, uint8_t *array, uint16_t capacity)
+{
+	Assert(capacity > 0);
+	Assert(buffer != 0);	
+	Assert(array != 0);
+	Assert((capacity & (capacity - 1)) == 0);
+	
+	buffer->base = array;
+	buffer->capacity = capacity;
+	buffer->mask = capacity - 1;
+	buffer->head = buffer->tail = 0;
+}
+
+static int8_t rb_get(ring_buf_t *rb, uint8_t *byte)
+{
+	int8_t result;
+	uint16_t next;
+	
+	Assert(rb != 0);
+	Assert(rb->base != 0);
+	next = (rb->tail + 1) & rb->mask;
+	
+	if (rb->head != rb->tail)
+	{
+		*byte = rb->base[rb->tail];
+		__DMB();
+		rb->tail = next;
+		result = 0;
+	}
+	else
+	{
+		result = -1;
+	}
+	
+	return result;
+}
+
+static int8_t rb_put(ring_buf_t *rb, uint8_t byte)
+{
+	int8_t result;
+	uint16_t next;
+	
+	Assert(rb != 0);
+	Assert(rb->base != 0);
+	next = (rb->head + 1) & rb->mask;
+	
+	if (next != rb->tail)
+	{
+		rb->base[rb->head] = byte;
+		__DMB();
+		rb->head = next;
+		result = 0;
+	}
+	else
+	{
+		result = -1;
+	}
+	
+	return result;
+}
+
+static int8_t rb_puts(ring_buf_t *rb, const char *msg)
+{
+	int8_t result;
+    
+	Assert(rb != 0);	
+	Assert(rb->base != 0);
+	Assert(msg != 0);
+	
+	result = 0;
+	
+	while(*msg != 0 && result == 0)
+	{
+		result = rb_put(rb, *msg);
+		msg++;
+	}
+	
+	return result;
+}
+
+static int8_t rb_put_unum(ring_buf_t *rb, uint32_t val)
+{
+	int8_t result = -1, i = 0;
+	char buf[11];
+	
+	if (val == 0) {
+        result = rb_put(rb, '0');
+        return result;
+    }
+    
+    while (val > 0) 
+	{
+        buf[i++] = '0' + (val % 10);
+        val /= 10;
+    }
+    
+    while (i > 0) 
+	{
+        result = rb_put(rb, buf[--i]);
+    }
+	
+	return result;
+}
+
+static int8_t rb_put_num(ring_buf_t *rb, int32_t val)
+{
+	int8_t result = -1;
+	
+	if (val < 0) { result = rb_put(rb, '-'); result = rb_put_unum(rb, -val); }
+    else result = rb_put_unum(rb, val);
+	
+	return result;
+}
+
 static void clock_init(void)
 {
 	FLASH_R->ACR = FLASH_ACR_LATENCY_2WS | FLASH_ACR_PRFTBE;
@@ -10,7 +127,7 @@ static void clock_init(void)
 	RCC->CR |= RCC_CR_CSSON;
 	
 	RCC->CFGR |= RCC_CFGR_PPRE1_DIV2 | RCC_CFGR_PLLSRC | RCC_CFGR_PLLMUL9;
-
+    
 	/* Turn on PLL and wait */
 	RCC->CR |= RCC_CR_PLLON;
 	while (!(RCC->CR & RCC_CR_PLLRDY));
@@ -23,10 +140,10 @@ static void clock_init(void)
 static void gpio_init(void)
 {
 	RCC->APB2ENR |= RCC_APB2ENR_IOPAEN
-				  |  RCC_APB2ENR_IOPCEN
-				  |  RCC_APB2ENR_AFIOEN
-				  |  RCC_APB2ENR_USART1EN;
-				  
+        |  RCC_APB2ENR_IOPCEN
+        |  RCC_APB2ENR_AFIOEN
+        |  RCC_APB2ENR_USART1EN;
+    
 	RCC->APB1ENR |= RCC_APB1ENR_CAN1EN;
 	
 	/* Setup Pin 13 */
@@ -59,6 +176,7 @@ static void uart_putc(char c)
     USART1->DR = (uint32_t)c;
 }
 
+#ifdef NODE_B
 static void uart_put_hex8(uint8_t val)
 {
     char hi = (char)(val >> 4);
@@ -74,6 +192,7 @@ static void uart_put_hex32(uint32_t val)
     uart_put_hex8((uint8_t)(val >> 8));
     uart_put_hex8((uint8_t)(val));
 }
+#endif
 
 static void uart_write(const char *s)
 {
@@ -145,7 +264,7 @@ static void can1_tx_id_dlc_data(can_id_t std_id, can_dlc_t dlc, uint8_t *data)
 	Assert(dlc.raw <= 8);
 	
 	while (!(CAN1->TSR & CAN1_TSR_TME0)) { }
-
+    
 	CAN1->TI0R = (std_id.raw << 21);
 	CAN1->TDT0R = dlc.raw;
 	{
@@ -155,7 +274,7 @@ static void can1_tx_id_dlc_data(can_id_t std_id, can_dlc_t dlc, uint8_t *data)
 			low |= (uint32_t)data[i] << (8 * i);
 		}
 		CAN1->TDL0R = low;
-
+        
 		if (dlc.raw > 4) {
 			for (i = 4; i < dlc.raw && i < 8; i++) {
 				high |= (uint32_t)data[i] << (8 * (i - 4));
@@ -196,8 +315,30 @@ static void can1_init(void)
 	CAN1->MCR &= ~CAN1_MCR_INRQ;
 	while (CAN1->MSR & CAN1_MSR_INAK) { }
 	
-	CAN1->IER |= CAN1_IER_FMPIE0;
-	NVIC_ISER0 = (1U << IRQ_CAN_RX0);
+	CAN1->IER |= CAN1_IER_FMPIE0 | CAN1_IER_ERRIE
+        | CAN1_IER_BOFIE | CAN1_IER_EPVIE | CAN1_IER_EWGIE;
+	NVIC_ISER0 = (1U << IRQ_CAN_RX0) | (1U << IRQ_CAN_SCE);
+}
+
+void CAN_SCE_IRQHandler(void)
+{
+    uint32_t esr = CAN1->ESR;
+    uint8_t tec = (uint8_t)(esr >> 16);
+    uint8_t rec = (uint8_t)(esr >> 24);
+    uint8_t lec = (uint8_t)((esr >> 4) & 0x7);
+    
+    rb_puts(&uart_tx_ring, "ERR lec=");
+    rb_put_unum(&uart_tx_ring, lec);
+    rb_puts(&uart_tx_ring, " tec=");
+    rb_put_unum(&uart_tx_ring, tec);
+    rb_puts(&uart_tx_ring, " rec=");
+    rb_put_unum(&uart_tx_ring, rec);
+    if (esr & CAN_ESR_BOFF) rb_puts(&uart_tx_ring, " BOFF");
+    if (esr & CAN_ESR_EPVF) rb_puts(&uart_tx_ring, " EPVF");
+    rb_puts(&uart_tx_ring, "\r\n");
+    
+    CAN1->ESR &= ~CAN_ESR_LEC;
+    CAN1->MSR |= CAN1_MSR_ERRI;
 }
 
 void EXTI0_IRQHandler(void)
@@ -212,51 +353,18 @@ void EXTI0_IRQHandler(void)
 #ifdef NODE_B
 		uart_write("node B!\r\n");
 #endif
-
-		uart_write("CAN1->TSR = ");
-		uart_put_hex32(CAN1->TSR);
-		uart_write("\r\n");
-		
-		uart_write("CAN1->MSR = ");
-		uart_put_hex32(CAN1->MSR);
-		uart_write("\r\n");
-		
-		uart_write("CAN1->MCR = ");
-		uart_put_hex32(CAN1->MCR);
-		uart_write("\r\n");
-		
-		uart_write("CAN1->BTR = ");
-		uart_put_hex32(CAN1->BTR);
-		uart_write("\r\n");
-		
 #ifdef NODE_A
-		uart_write("Node A: sending 'CAFE'\r\n");
-		{
-			can_msg_t msg;
-			uint8_t i;
-			msg.id.raw = 0x123;
-			msg.dlc.raw = 2;
-			for (i = 0; i < 8; i++) msg.data[i] = 0;
+        {
+            uint8_t i;
+            can_msg_t msg;
+            uart_write("Node A: sending 'CAFE'\r\n");
+            msg.id.raw = 0x123;
+            msg.dlc.raw = 2;
+            for (i = 0; i < 8; i++) msg.data[i] = 0;
             can_msg_set_data_u16(&msg, 0xCAFE);
-			can1_tx_msg(&msg);	
-		}
+            can1_tx_msg(&msg);	
+        }
 #endif
-		
-		uart_write("CAN1->TSR = ");
-		uart_put_hex32(CAN1->TSR);
-		uart_write("\r\n");
-		
-		uart_write("CAN1->MSR = ");
-		uart_put_hex32(CAN1->MSR);
-		uart_write("\r\n");
-		
-		uart_write("CAN1->MCR = ");
-		uart_put_hex32(CAN1->MCR);
-		uart_write("\r\n");
-		
-		uart_write("CAN1->BTR = ");
-		uart_put_hex32(CAN1->BTR);
-		uart_write("\r\n");
 	}	
 }
 
@@ -267,7 +375,7 @@ void USB_LP_CAN_RX0_IRQHandler(void)
 	
 	rx.id.raw  = (uint32_t)((CAN1->RI0R >> 21) & 0x7FF);
 	rx.dlc.raw = (uint8_t)(CAN1->RDT0R & 0x0F);
-
+    
 	Assert(rx.id.raw <= 0x7FF);
 	Assert(rx.dlc.raw <= 8);
 	{
@@ -282,20 +390,20 @@ void USB_LP_CAN_RX0_IRQHandler(void)
 		rx.data[6] = (uint8_t)((high >> 16) & 0xFF);
 		rx.data[7] = (uint8_t)((high >> 24) & 0xFF);
 		
-		uart_write("RX ID=");
-		uart_put_hex32(rx.id.raw);
-		uart_write(" DLC=");
-		uart_putc('0' + rx.dlc.raw);
-		uart_write(" DATA=");
+		rb_puts(&uart_tx_ring, "RX ID=");
+		rb_put_unum(&uart_tx_ring, rx.id.raw);
+		rb_puts(&uart_tx_ring, " DLC=");
+		rb_put(&uart_tx_ring, '0' + rx.dlc.raw);
+		rb_puts(&uart_tx_ring, " DATA=");
 		{
 			int i;
 			for (i = 0; i < rx.dlc.raw; i++) {
-				uart_put_hex8(rx.data[i]);
+				rb_put_num(&uart_tx_ring, rx.data[i]);
 			}
 		}
-		uart_write("\r\n");
+		rb_puts(&uart_tx_ring, "\r\n");
 	}
-
+    
 	CAN1->RF0R |= CAN1_RF0R_RFOM0;   /* release FIFO0 */
 }
 
@@ -304,17 +412,30 @@ int main(void)
 	clock_init();
 	gpio_init();
 	uart_init();
+    rb_init(&uart_tx_ring, uart_tx_buf, sizeof(uart_tx_buf));
 	tim2_init();
 	exti0_init();
 	can1_init();
 	
+    
+    rb_put_num(&uart_tx_ring, -32);
+    rb_puts(&uart_tx_ring, "hello\r\n");
+    
 	uart_write("Project 2 - CAN Bus communication\r\n");
-
+    
 	for (;;) {
+		{
+			uint8_t c;
+			while (rb_get(&uart_tx_ring, &c) == 0)
+			{
+				while (!(USART1->SR & USART_SR_TXE));
+				USART1->DR = c;
+			}
+		}
 #ifdef NODE_B
 		if (CAN1->RF0R & CAN1_RF0R_FMP0) {
 			uart_write("Node B!\r\n");
-		
+            
 			uart_write("RX ID  = ");
 			uart_put_hex32(CAN1->RI0R);
 			uart_write("\r\n");
