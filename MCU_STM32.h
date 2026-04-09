@@ -150,10 +150,12 @@ typedef struct {
 #define USART1            ((USART_t *)(APB2_BASE + 0x3800))
 
 #define USART_SR_TXE      (1U << 7)
-
+#define USART_RE_RXNE     (1U << 5)
 
 #define USART_CR1_UE      (1U << 13)
 #define USART_CR1_TE      (1U << 3)
+#define USART_CR1_RE      (1U << 5)
+
 
 typedef struct {
 	volatile uint32_t MCR;
@@ -257,5 +259,11 @@ typedef struct {
 	volatile uint16_t head;
 	volatile uint16_t tail;
 } ring_buf_t;
+
+typedef struct
+{
+    can_msg_t msg;
+    int valid;
+} cmd_result_t;
 
 #endif

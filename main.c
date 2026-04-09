@@ -204,7 +204,7 @@ static void uart_write(const char *s)
 static void uart_init(void)
 {
 	USART1->BRR = 0x271;
-	USART1->CR1 = USART_CR1_UE | USART_CR1_TE;
+	USART1->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
 }
 
 static void tim2_init(void)
@@ -257,6 +257,7 @@ static void can_msg_set_data_u16(can_msg_t *msg, uint16_t val) {
     msg->data[0] = (uint8_t)(val & 0xFF);
     msg->data[1] = (uint8_t)((val >> 8) & 0xFF);
 }
+#endif
 
 static void can1_tx_id_dlc_data(can_id_t std_id, can_dlc_t dlc, uint8_t *data)
 {	
@@ -293,7 +294,6 @@ static void can1_tx_msg(can_msg_t *msg)
 	Assert(msg != 0);
 	can1_tx_id_dlc_data(msg->id, msg->dlc, msg->data);
 }
-#endif
 
 static void can1_init(void)
 {	
@@ -407,8 +407,114 @@ void USB_LP_CAN_RX0_IRQHandler(void)
 	CAN1->RF0R |= CAN1_RF0R_RFOM0;   /* release FIFO0 */
 }
 
+static int str_starts_with(char *c, char *mask)
+{
+    uint8_t i = 0;
+    while(*(mask + i) != '\0')
+    {
+        if (*(c + i) != *(mask + i)) return 0;
+        i++;
+    }
+    return 1;
+}
+
+static int hex_nibble(char c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    return -1;
+}
+
+static void cmd_parse(char *buf, uint32_t len, cmd_result_t *result)
+{
+    uint8_t i;
+    char *c = buf;
+    char *end = buf + len;
+    
+    result->msg.id.raw = 0;
+    result->msg.dlc.raw = 0;
+    for (i = 0; i < 8; i++) result->msg.data[i] = 0;
+    result->valid = 0;
+    
+    /* Need at least "TX 1 1 FF" = 9 chars */
+    if (len < 9) return;
+    if (!str_starts_with(c, "TX ")) return;
+    c += 3;
+    
+    /* Skip optional "0x" prefix */
+    if (c + 2 <= end && c[0] == '0' && (c[1] == 'x' || c[1] == 'X')) {
+        c += 2;
+    }
+    
+    /* Parse hex ID (1-3 hex chars) */
+    {
+        uint32_t id = 0;
+        uint8_t id_count = 0;
+        while (c < end && *c != ' ') {
+            int nib = hex_nibble(*c);
+            if (nib < 0) return;
+            id = (id << 4) | (uint32_t)nib;
+            id_count++;
+            c++;
+        }
+        if (id_count == 0 || id > 0x7FF) return;
+        result->msg.id.raw = id;
+    }
+    
+    /* Skip space between ID and DLC */
+    if (c >= end || *c != ' ') return;
+    c++;
+    
+    /* Parse DLC (single digit 0-8) */
+    if (c >= end || *c < '0' || *c > '8') return;
+    result->msg.dlc.raw = (uint8_t)(*c - '0');
+    c++;
+    
+    /* Parse data bytes */
+    {
+        uint8_t byte_idx = 0;
+        while (byte_idx < result->msg.dlc.raw) {
+            int hi, lo;
+            
+            /* Skip spaces */
+            while (c < end && *c == ' ') c++;
+            if (c + 1 >= end) return;
+            
+            hi = hex_nibble(*c++);
+            lo = hex_nibble(*c++);
+            if (hi < 0 || lo < 0) return;
+            
+            result->msg.data[byte_idx] = (uint8_t)((hi << 4) | lo);
+            byte_idx++;
+        }
+    }
+    
+    result->valid = 1;
+}
+
+static void cmd_handle(char *buf, uint32_t len)
+{
+    cmd_result_t parse_result;
+    
+    cmd_parse(buf, len, &parse_result);
+    if (parse_result.valid) {
+        rb_puts(&uart_tx_ring, "TX ID=");
+        rb_put_unum(&uart_tx_ring, parse_result.msg.id.raw);
+        rb_puts(&uart_tx_ring, " DLC=");
+        rb_put_unum(&uart_tx_ring, (uint32_t)parse_result.msg.dlc.raw);
+        rb_puts(&uart_tx_ring, "\r\n");
+        can1_tx_msg(&parse_result.msg);
+    } else {
+        rb_puts(&uart_tx_ring, "ERR: bad command\r\n");
+    }
+}
+
 int main(void)
 {
+    char cmd_buf[64];
+    uint32_t cmd_len = 0;
+    
 	clock_init();
 	gpio_init();
 	uart_init();
@@ -424,7 +530,21 @@ int main(void)
 	uart_write("Project 2 - CAN Bus communication\r\n");
     
 	for (;;) {
-		{
+        if (USART1->SR & USART_RE_RXNE) {
+            char c = (char)USART1->DR;
+            if (c == '\r' || c == '\n') {
+                if (cmd_len > 0)
+                {
+                    cmd_handle(cmd_buf, cmd_len);
+                    cmd_len = 0;
+                }
+            }
+            else if (cmd_len < sizeof(cmd_buf) - 1)
+            {
+                cmd_buf[cmd_len++] = c;
+            }
+        }
+        {
 			uint8_t c;
 			while (rb_get(&uart_tx_ring, &c) == 0)
 			{
