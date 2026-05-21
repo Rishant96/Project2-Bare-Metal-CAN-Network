@@ -156,6 +156,10 @@ typedef struct {
 #define USART_CR1_TE      (1U << 3)
 #define USART_CR1_RE      (1U << 5)
 
+typedef struct {
+    volatile uint32_t FR1;   /* Filter bank x register 1 */
+    volatile uint32_t FR2;   /* Filter bank x register 2 */
+} CAN_FilterRegister;
 
 typedef struct {
 	volatile uint32_t MCR;
@@ -197,10 +201,7 @@ typedef struct {
 	volatile uint32_t _reserved5[1];
 	volatile uint32_t FA1R;
 	volatile uint32_t _reserved6[8];
-	volatile uint32_t F0R1;	
-	volatile uint32_t F0R2;
-	volatile uint32_t F1R1;
-	volatile uint32_t F1R2;	
+	CAN_FilterRegister sFilterRegister[28];
 } CAN1_t;
 
 #define CAN1              ((CAN1_t *)(CAN1_BASE + 0x0000))
@@ -210,6 +211,8 @@ typedef struct {
 #define CAN1_MSR_INAK     (1U << 0)
 #define CAN1_MSR_SLAK     (1U << 1)
 #define CAN1_MSR_ERRI     (1U << 2)
+
+#define CAN1_FMR_FINIT    (1U << 0)
 
 #define CAN1_TIXR_TXRQ    (1U << 0)
 #define CAN1_TSR_TME0     (1U << 26)

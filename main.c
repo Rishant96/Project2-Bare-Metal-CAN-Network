@@ -64,6 +64,16 @@ static int8_t rb_put(ring_buf_t *rb, uint8_t byte)
 	return result;
 }
 
+static int8_t rb_put_hex8(ring_buf_t *rb, uint8_t val)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    int8_t r;
+    Assert(rb != 0);
+    r = rb_put(rb, hex[(val >> 4) & 0x0F]);
+    if (r == 0) r = rb_put(rb, hex[val & 0x0F]);
+    return r;
+}
+
 static int8_t rb_puts(ring_buf_t *rb, const char *msg)
 {
 	int8_t result;
@@ -231,7 +241,7 @@ void NMI_Handler(void)
 {
 	if (RCC->CIR & RCC_CIR_CSSF) {
 		RCC->CIR |= RCC_CIR_CSSC;
-		uart_write("HSE Failure\r\n");
+		rb_puts(&uart_tx_ring, "HSE Failure\r\n");
 	}
 }
 
@@ -240,14 +250,14 @@ void TIM2_IRQHandler(void)
     if (TIM2->SR & TIM_SR_UIF) {
         TIM2->SR &= ~TIM_SR_UIF;   /* Clear interrupt flag */
         GPIOC->ODR ^= (1U << 13);  /* Toggle LED */
-		uart_write("tick");
+		rb_puts(&uart_tx_ring, "tick");
 #ifdef NODE_A
-        uart_write(" A");
+        rb_puts(&uart_tx_ring, " A");
 #endif
 #ifdef NODE_B
-        uart_write(" B");
+        rb_puts(&uart_tx_ring, " B");
 #endif
-		uart_write("\r\n");
+		rb_puts(&uart_tx_ring, "\r\n");
     }
 }
 
@@ -295,6 +305,37 @@ static void can1_tx_msg(can_msg_t *msg)
 	can1_tx_id_dlc_data(msg->id, msg->dlc, msg->data);
 }
 
+static void can1_filter_init(can_id_t list_a, can_id_t list_b,
+                             can_id_t mask_id, can_id_t mask_bits)
+{
+    Assert((CAN1->MSR & CAN1_MSR_INAK) != 0);
+    Assert(list_a.raw   <= 0x7FF);
+    Assert(list_b.raw   <= 0x7FF);
+    Assert(mask_id.raw  <= 0x7FF);
+    Assert(mask_bits.raw <= 0x7FF);
+
+    CAN1->FMR |= CAN1_FMR_FINIT;
+
+    CAN1->FA1R &= ~((1u << 0) | (1u << 1));
+    CAN1->FS1R |= (1u << 0) | (1u << 1);
+
+    CAN1->FM1R |=  (1u << 0);
+    CAN1->FM1R &= ~(1u << 1);
+ 
+    CAN1->sFilterRegister[0].FR1 = ((uint32_t)list_a.raw) << 21;
+    CAN1->sFilterRegister[0].FR2 = ((uint32_t)list_b.raw) << 21;
+
+    CAN1->sFilterRegister[1].FR1 = ((uint32_t)mask_id.raw)   << 21;
+    CAN1->sFilterRegister[1].FR2 = ((uint32_t)mask_bits.raw) << 21;
+
+    CAN1->FFA1R &= ~((1u << 0) | (1u << 1));
+    CAN1->FA1R |= (1u << 0) | (1u << 1);
+    CAN1->FMR &= ~CAN1_FMR_FINIT;
+
+    Assert((CAN1->FA1R & 0x3) == 0x3);
+    Assert((CAN1->FMR & CAN1_FMR_FINIT) == 0);
+}
+
 static void can1_init(void)
 {	
 	CAN1->MCR = (CAN1->MCR & ~CAN1_MCR_SLEEP) | CAN1_MCR_INRQ;
@@ -303,13 +344,15 @@ static void can1_init(void)
 	
 	CAN1->BTR = CAN_BTR_SJW(1) | CAN_BTR_TS2(2) | CAN_BTR_TS1(15) | CAN_BTR_BRP(4);
 	/*CAN1->BTR |= (1U << 30); Loopback mode for testing */
-	
-	CAN1->FMR  |=  1;
-	CAN1->FS1R |=  1;
-	CAN1->F0R1  =  0;
-	CAN1->F0R2  =  0;
-	CAN1->FA1R |=  1;
-	CAN1->FMR  &= ~1;
+
+	{
+		can_id_t list_a, list_b, mask_id, mask_bits;
+		list_a.raw    = 0x100;
+		list_b.raw    = 0x200;
+		mask_id.raw   = 0x100;
+		mask_bits.raw = 0x700;
+		can1_filter_init(list_a, list_b, mask_id, mask_bits);
+	}
 	
 	CAN1->MCR |= CAN1_MCR_NART;
 	CAN1->MCR &= ~CAN1_MCR_INRQ;
@@ -338,7 +381,7 @@ void CAN_SCE_IRQHandler(void)
     rb_puts(&uart_tx_ring, "\r\n");
     
     CAN1->ESR &= ~CAN_ESR_LEC;
-    CAN1->MSR |= CAN1_MSR_ERRI;
+    CAN1->MSR = CAN1_MSR_ERRI;
 }
 
 void EXTI0_IRQHandler(void)
@@ -346,18 +389,18 @@ void EXTI0_IRQHandler(void)
     Assert(EXTI->PR & (1U << 0));
 	if (EXTI->PR & (1U << 0)) {
 		EXTI->PR = (1U << 0);
-		uart_write("button!\r\n");
+		rb_puts(&uart_tx_ring, "button!\r\n");
 #ifdef NODE_A
-		uart_write("node A!\r\n");
+		rb_puts(&uart_tx_ring, "node A!\r\n");
 #endif
 #ifdef NODE_B
-		uart_write("node B!\r\n");
+		rb_puts(&uart_tx_ring, "node B!\r\n");
 #endif
 #ifdef NODE_A
         {
             uint8_t i;
             can_msg_t msg;
-            uart_write("Node A: sending 'CAFE'\r\n");
+            rb_puts(&uart_tx_ring, "Node A: sending 'CAFE'\r\n");
             msg.id.raw = 0x123;
             msg.dlc.raw = 2;
             for (i = 0; i < 8; i++) msg.data[i] = 0;
@@ -393,12 +436,12 @@ void USB_LP_CAN_RX0_IRQHandler(void)
 		rb_puts(&uart_tx_ring, "RX ID=");
 		rb_put_unum(&uart_tx_ring, rx.id.raw);
 		rb_puts(&uart_tx_ring, " DLC=");
-		rb_put(&uart_tx_ring, '0' + rx.dlc.raw);
+		rb_put_unum(&uart_tx_ring, '0' + rx.dlc.raw);
 		rb_puts(&uart_tx_ring, " DATA=");
 		{
 			int i;
 			for (i = 0; i < rx.dlc.raw; i++) {
-				rb_put_num(&uart_tx_ring, rx.data[i]);
+				rb_put_hex8(&uart_tx_ring, rx.data[i]);
 			}
 		}
 		rb_puts(&uart_tx_ring, "\r\n");
@@ -522,7 +565,6 @@ int main(void)
 	tim2_init();
 	exti0_init();
 	can1_init();
-	
     
     rb_put_num(&uart_tx_ring, -32);
     rb_puts(&uart_tx_ring, "hello\r\n");
